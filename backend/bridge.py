@@ -137,11 +137,59 @@ def _normalize(text: str) -> str:
     return " ".join(text.strip().split())
 
 
+def _word_key(w: str) -> str:
+    w = (
+        w.lower()
+        .replace("á", "a")
+        .replace("à", "a")
+        .replace("ä", "a")
+        .replace("ö", "o")
+        .replace("ü", "u")
+        .replace("ß", "ss")
+        .replace("í", "i")
+        .replace("é", "e")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
+    return re.sub(r"[^a-z0-9]+", "", w)
+
+
+def _near_dup(a: str, b: str) -> bool:
+    """True if two word keys are the same token stuttering (incl. typos like berlin/belrin)."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    # Never fuzzy-match short function words (good/room, die/das, …)
+    if len(a) < 5 or len(b) < 5:
+        return False
+    if abs(len(a) - len(b)) > 4:
+        return False
+    if sorted(a) == sorted(b):
+        return True
+    if sorted(a[:6]) == sorted(b[:6]):
+        return True
+    if a[:4] == b[:4] and abs(len(a) - len(b)) <= 2:
+        return True
+    if len(a) > 12 or len(b) > 12:
+        return False
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1] <= 2
+
+
 def _collapse_repetitions(text: str) -> str:
-    """Collapse consecutive duplicate sentences / looping phrases from Whisper or the LLM."""
+    """Collapse duplicate sentences, words, and hyphen stutter loops from Whisper/LLM."""
     t = _normalize(text)
     if not t:
         return t
+
+    while re.search(r"[A-Za-zÄÖÜäöüßí]{3,}-[A-Za-zÄÖÜäöüßí]", t):
+        t = re.sub(r"([A-Za-zÄÖÜäöüßí]{3,})-([A-Za-zÄÖÜäöüßí])", r"\1 \2", t)
 
     parts: list[str] = []
     buf = ""
@@ -164,30 +212,101 @@ def _collapse_repetitions(text: str) -> str:
                 continue
             out.append(p)
             prev_key = key
-        return _normalize(" ".join(out))
+        t = _normalize(" ".join(out))
 
     words = t.split()
-    if len(words) >= 8:
-        for n in (8, 6, 5, 4):
-            if len(words) < n * 2:
-                continue
-            chunk = " ".join(words[:n])
-            collapsed = [chunk]
-            i = n
-            while i + n <= len(words):
-                nxt = " ".join(words[i : i + n])
-                if nxt.lower().rstrip(".!,;") == chunk.lower().rstrip(".!,;"):
-                    i += n
-                    continue
-                collapsed.append(nxt)
-                chunk = nxt
-                i += n
-            if i < len(words):
-                collapsed.append(" ".join(words[i:]))
-            candidate = " ".join(collapsed)
-            if len(candidate) < len(t) * 0.85:
-                return _normalize(candidate)
+    collapsed: list[str] = []
+    prev = ""
+    for w in words:
+        key = _word_key(w)
+        if key and prev and _near_dup(key, prev):
+            continue
+        collapsed.append(w)
+        if key:
+            prev = key
+    t = _normalize(" ".join(collapsed))
+
+    words = t.split()
+    for n in (6, 5, 4, 3, 2):
+        if len(words) < n * 2:
+            continue
+        out_w: list[str] = []
+        i = 0
+        shrunk = False
+        while i < len(words):
+            chunk = words[i : i + n]
+            if len(chunk) < n:
+                out_w.extend(words[i:])
+                break
+            keys = [_word_key(x) for x in chunk]
+            j = i + n
+            while j + n <= len(words) and [_word_key(x) for x in words[j : j + n]] == keys:
+                j += n
+                shrunk = True
+            out_w.extend(chunk)
+            i = j
+        if shrunk:
+            return _normalize(" ".join(out_w))
     return t
+
+
+def _is_looping(text: str) -> bool:
+    """True when the model is stuttering the same word / near-word over and over."""
+    t = _normalize(text)
+    if not t:
+        return False
+    if re.search(r"\b\w{20,}\b", t):
+        return True
+    if "-" in t and re.search(r"[A-Za-zÄÖÜäöüßí]{3,}-[A-Za-zÄÖÜäöüßí]{3,}-", t):
+        return True
+    if re.search(
+        r"\b([A-Za-zÄÖÜäöüß]{3,})(?:\s*[,/-]\s*\1){2,}",
+        t,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    keys = [_word_key(w) for w in t.split() if _word_key(w)]
+    if len(keys) < 4:
+        return False
+    from collections import Counter
+
+    counts = Counter(keys)
+    top_word, top_n = counts.most_common(1)[0]
+    if top_n >= 4 and top_n / len(keys) >= 0.25 and len(top_word) >= 3:
+        return True
+    near_hits = sum(1 for i in range(1, len(keys)) if _near_dup(keys[i], keys[i - 1]))
+    return near_hits >= 2
+
+
+def _salvage_loop(text: str) -> str:
+    """Cut trailing stutter; keep the usable head of the sentence."""
+    t = _collapse_repetitions(text)
+    if not t:
+        return t
+    words = t.split()
+    keep: list[str] = []
+    prev = ""
+    for w in words:
+        key = _word_key(w)
+        if len(key) >= 20:
+            break
+        if key and prev and _near_dup(key, prev):
+            break
+        # Concatenated / mangled leftover (Belrimbelri after Berlin)
+        if (
+            key
+            and prev
+            and len(key) >= 8
+            and len(prev) >= 5
+            and len(set(prev) & set(key)) >= 4
+            and len(key) >= len(prev) + 2
+        ):
+            break
+        keep.append(w)
+        if key:
+            prev = key
+    cleaned = _normalize(" ".join(keep)).rstrip(",;:-")
+    return cleaned or t
 
 
 def _is_blank_token(text: str) -> bool:
@@ -211,7 +330,9 @@ def _is_hallucination(text: str, *, duration_ms: float | None = None) -> bool:
         return True
     if any(marker in t for marker in HALLUCINATION_MARKERS):
         return True
-    # Mixed DE+EN paragraphs are almost always Whisper caption junk.
+    # Looping after salvage still means unusable output
+    if _is_looping(raw):
+        return True
     has_de = bool(
         re.search(
             r"\b(der|die|das|und|ich|nicht|sie|ist|ein|eine|mit|für|auch|dann|musst|müssen)\b",
@@ -392,10 +513,10 @@ async def whisper_infer(
 def _extract_text(payload: dict[str, Any]) -> str:
     text = payload.get("text")
     if isinstance(text, str):
-        return _collapse_repetitions(_normalize(text))
+        return _salvage_loop(_collapse_repetitions(_normalize(text)))
     tr = payload.get("transcription")
     if isinstance(tr, str):
-        return _collapse_repetitions(_normalize(tr))
+        return _salvage_loop(_collapse_repetitions(_normalize(tr)))
     return ""
 
 
@@ -412,20 +533,23 @@ def _extract_language(payload: dict[str, Any]) -> Optional[str]:
 
 
 async def llama_chat(system: str, user: str) -> tuple[str, int]:
-    # Small Qwen often loops on long lines; penalize repeats and collapse loops.
-    user = _collapse_repetitions(user)
+    # Small Qwen often loops on long lines; keep prompts short and punish repeats.
+    user = _salvage_loop(_collapse_repetitions(user))
+    if len(user) > 160:
+        user = user[:160].rsplit(" ", 1)[0]
     body = {
         "model": "local",
         "temperature": 0,
-        "max_tokens": 96,
-        "frequency_penalty": 0.8,
-        "presence_penalty": 0.4,
-        "repeat_penalty": 1.25,
+        "max_tokens": 48,
+        "frequency_penalty": 1.0,
+        "presence_penalty": 0.6,
+        "repeat_penalty": 1.45,
         "messages": [
             {
                 "role": "system",
                 "content": system
-                + " Never repeat the same sentence or phrase. One clean translation only.",
+                + " Keep it short (one or two sentences). Never repeat any word more than twice. "
+                "Never stutter place names. One clean translation only.",
             },
             {"role": "user", "content": user},
         ],
@@ -443,7 +567,7 @@ async def llama_chat(system: str, user: str) -> tuple[str, int]:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=502, detail=f"bad llama response: {exc}") from exc
-    return _collapse_repetitions(_normalize(content)), ms
+    return _salvage_loop(_collapse_repetitions(_normalize(content))), ms
 
 
 async def llama_translate_en_de(english: str) -> tuple[str, int]:
