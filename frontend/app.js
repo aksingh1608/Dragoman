@@ -84,21 +84,29 @@
     els.voiceBanner.classList.remove("show");
   }
 
+  /** Prefer on-device voices so speech still works with Wi‑Fi / mobile data off. */
+  function preferLocal(list) {
+    const local = list.filter((v) => v.localService === true);
+    return local.length ? local : list;
+  }
+
   function pickVoices() {
     if (!window.speechSynthesis) {
       showBanner(
-        "No speechSynthesis on this browser. Install Chrome/Android WebView with TTS, and offline voice data in Android Settings → Accessibility → Text-to-speech."
+        "No speechSynthesis on this browser. Install Chrome, then install offline DE + EN voice data (Google Text-to-speech → Install voice data)."
       );
       return;
     }
     const voices = window.speechSynthesis.getVoices() || [];
-    const de = voices.filter((v) => /^de(-|_|$)/i.test(v.lang));
-    const en = voices.filter((v) => /^en(-|_|$)/i.test(v.lang));
+    const de = preferLocal(voices.filter((v) => /^de(-|_|$)/i.test(v.lang)));
+    const en = preferLocal(voices.filter((v) => /^en(-|_|$)/i.test(v.lang)));
     state.voiceDe =
+      de.find((v) => /de-DE/i.test(v.lang) && v.localService) ||
       de.find((v) => /de-DE/i.test(v.lang)) ||
       de[0] ||
       null;
     state.voiceEn =
+      en.find((v) => /en-(GB|US)/i.test(v.lang) && v.localService) ||
       en.find((v) => /en-GB/i.test(v.lang)) ||
       en.find((v) => /en-US/i.test(v.lang)) ||
       en[0] ||
@@ -107,11 +115,18 @@
     const missing = [];
     if (!state.voiceDe) missing.push("German (de-DE)");
     if (!state.voiceEn) missing.push("English (en-US / en-GB)");
+    const notLocal =
+      (state.voiceDe && state.voiceDe.localService === false) ||
+      (state.voiceEn && state.voiceEn.localService === false);
     if (missing.length) {
       showBanner(
         "Missing offline TTS voice(s): " +
           missing.join(", ") +
-          ". On Android: Settings → System → Languages → Speech → Text-to-speech → install offline voice data, then reopen Dragoman."
+          ". Open Google Text-to-speech → gear → Install voice data → download Deutsch + English, then reopen Dragoman."
+      );
+    } else if (notLocal) {
+      showBanner(
+        "TTS voices look online-only — speech may fail with no internet. Install offline voice data in Google Text-to-speech, then reopen."
       );
     } else {
       hideBanner();
@@ -136,7 +151,12 @@
       u.rate = 1.0;
       u.onend = () => resolve();
       u.onerror = () => resolve();
-      window.speechSynthesis.speak(u);
+      // Android: small delay helps when voices just loaded offline.
+      try {
+        window.speechSynthesis.speak(u);
+      } catch (_) {
+        resolve();
+      }
     });
   }
 

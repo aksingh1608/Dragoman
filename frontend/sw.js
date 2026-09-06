@@ -1,5 +1,5 @@
 /* Dragoman service worker — cache shell for offline reloads on localhost */
-const CACHE = "dragoman-v4";
+const CACHE = "dragoman-v5";
 const ASSETS = [
   "/",
   "/index.html",
