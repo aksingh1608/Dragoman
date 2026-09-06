@@ -170,12 +170,13 @@ LLAMA_PID=$!
 wait_http() {
   local url="$1"
   local name="$2"
-  local tries=90
+  local tries=120
   local i=0
   echo -n "Waiting for $name"
   while (( i < tries )); do
     code="$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 "$url" 2>/dev/null || true)"
-    if [[ -n "$code" && "$code" != "000" ]]; then
+    # Only treat real success as ready (503 = still loading model).
+    if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
       echo " ready (HTTP $code)"
       return 0
     fi
@@ -184,7 +185,13 @@ wait_http() {
     i=$((i + 1))
   done
   echo
-  echo "ERROR: $name did not become ready at $url" >&2
+  echo "ERROR: $name did not become ready at $url (last HTTP ${code:-none})" >&2
+  echo "---- last log lines ----" >&2
+  if [[ "$name" == *whisper* ]]; then
+    tail -n 30 "$ROOT/whisper-server.log" >&2 || true
+  else
+    tail -n 30 "$ROOT/llama-server.log" >&2 || true
+  fi
   exit 1
 }
 
@@ -242,9 +249,19 @@ export BRIDGE_PORT="$BRIDGE_PORT"
 
 echo "Starting bridge on 0.0.0.0:$BRIDGE_PORT ..."
 cd "$ROOT"
+: >"$ROOT/bridge.log"
 "$UVICORN" backend.bridge:app --host 0.0.0.0 --port "$BRIDGE_PORT" --log-level info \
-  >"$ROOT/bridge.log" 2>&1 &
+  >>"$ROOT/bridge.log" 2>&1 &
 BRIDGE_PID=$!
+
+# Give uvicorn a moment; if it dies, show why (port in use / import error / OOM).
+sleep 2
+if ! kill -0 "$BRIDGE_PID" 2>/dev/null; then
+  echo "ERROR: bridge exited immediately. bridge.log:" >&2
+  tail -n 40 "$ROOT/bridge.log" >&2 || true
+  exit 1
+fi
+wait_http "http://127.0.0.1:$BRIDGE_PORT/api/health" "bridge"
 
 echo
 echo "Dragoman is up."
@@ -253,4 +270,11 @@ echo "  Debug clip: http://127.0.0.1:$BRIDGE_PORT/api/debug/last"
 echo "  Logs: whisper-server.log, llama-server.log, bridge.log"
 echo "Press Ctrl+C to stop."
 
+# Don't let a non-zero wait status alone confuse; always show log on death.
+set +e
 wait "$BRIDGE_PID"
+bridge_rc=$?
+set -e
+echo "Bridge exited (code $bridge_rc). Last bridge.log lines:" >&2
+tail -n 40 "$ROOT/bridge.log" >&2 || true
+exit "$bridge_rc"
