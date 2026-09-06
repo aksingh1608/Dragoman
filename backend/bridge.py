@@ -112,6 +112,59 @@ def _normalize(text: str) -> str:
     return " ".join(text.strip().split())
 
 
+def _collapse_repetitions(text: str) -> str:
+    """Collapse consecutive duplicate sentences / looping phrases from Whisper or the LLM."""
+    t = _normalize(text)
+    if not t:
+        return t
+
+    parts: list[str] = []
+    buf = ""
+    for ch in t:
+        buf += ch
+        if ch in ".!?。":
+            piece = buf.strip()
+            if piece:
+                parts.append(piece)
+            buf = ""
+    if buf.strip():
+        parts.append(buf.strip())
+
+    if len(parts) > 1:
+        out: list[str] = []
+        prev_key = ""
+        for p in parts:
+            key = p.lower().rstrip(".!?,;:").strip()
+            if key and key == prev_key:
+                continue
+            out.append(p)
+            prev_key = key
+        return _normalize(" ".join(out))
+
+    words = t.split()
+    if len(words) >= 8:
+        for n in (8, 6, 5, 4):
+            if len(words) < n * 2:
+                continue
+            chunk = " ".join(words[:n])
+            collapsed = [chunk]
+            i = n
+            while i + n <= len(words):
+                nxt = " ".join(words[i : i + n])
+                if nxt.lower().rstrip(".!,;") == chunk.lower().rstrip(".!,;"):
+                    i += n
+                    continue
+                collapsed.append(nxt)
+                chunk = nxt
+                i += n
+            if i < len(words):
+                collapsed.append(" ".join(words[i:]))
+            candidate = " ".join(collapsed)
+            if len(candidate) < len(t) * 0.85:
+                return _normalize(candidate)
+    return t
+
+
 def _is_blank_token(text: str) -> bool:
     t = _normalize(text).lower()
     if not t:
@@ -292,10 +345,10 @@ async def whisper_infer(
 def _extract_text(payload: dict[str, Any]) -> str:
     text = payload.get("text")
     if isinstance(text, str):
-        return _normalize(text)
+        return _collapse_repetitions(_normalize(text))
     tr = payload.get("transcription")
     if isinstance(tr, str):
-        return _normalize(tr)
+        return _collapse_repetitions(_normalize(tr))
     return ""
 
 
@@ -312,12 +365,21 @@ def _extract_language(payload: dict[str, Any]) -> Optional[str]:
 
 
 async def llama_chat(system: str, user: str) -> tuple[str, int]:
+    # Small Qwen often loops on long lines; penalize repeats and collapse loops.
+    user = _collapse_repetitions(user)
     body = {
         "model": "local",
         "temperature": 0,
-        "max_tokens": 128,
+        "max_tokens": 96,
+        "frequency_penalty": 0.8,
+        "presence_penalty": 0.4,
+        "repeat_penalty": 1.25,
         "messages": [
-            {"role": "system", "content": system},
+            {
+                "role": "system",
+                "content": system
+                + " Never repeat the same sentence or phrase. One clean translation only.",
+            },
             {"role": "user", "content": user},
         ],
     }
@@ -334,7 +396,7 @@ async def llama_chat(system: str, user: str) -> tuple[str, int]:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=502, detail=f"bad llama response: {exc}") from exc
-    return _normalize(content), ms
+    return _collapse_repetitions(_normalize(content)), ms
 
 
 async def llama_translate_en_de(english: str) -> tuple[str, int]:
