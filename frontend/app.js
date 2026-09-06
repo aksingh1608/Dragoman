@@ -626,7 +626,27 @@
     state.busy = false;
   }
 
+  function skipMessage(reason) {
+    if (reason === "silent") return "Too quiet — hold closer and speak again";
+    if (reason === "blank") return "No speech heard — try again";
+    if (reason === "hallucination")
+      return "Didn't catch that — say a short clear sentence";
+    return "Skipped — try again";
+  }
+
   function applyResult(direction, data) {
+    if (data && data.skipped) {
+      const msg = skipMessage(data.reason);
+      els.sourceDe.textContent = "";
+      els.targetDe.textContent = msg;
+      els.sourceEn.textContent = "";
+      els.targetEn.textContent = msg;
+      els.metaDe.textContent = formatMeta(data);
+      els.metaEn.textContent = formatMeta(data);
+      showBanner(msg);
+      return;
+    }
+    hideBanner();
     if (direction === "de-en") {
       els.sourceDe.textContent = data.source_text || "";
       els.targetDe.textContent = data.target_text || "";

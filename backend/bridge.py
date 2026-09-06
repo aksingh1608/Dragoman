@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import struct
 import threading
 import time
@@ -63,6 +64,26 @@ HALLUCINATION_STRINGS = {
     "...",
 }
 
+# Whisper often invents YouTube / subtitle captions on short or quiet clips.
+HALLUCINATION_MARKERS = (
+    "learnlab",
+    "university of sydney",
+    "you are watching",
+    "language learning resource",
+    "amara.org",
+    "untertitel",
+    "subtitle",
+    "subtitles",
+    "thanks for watching",
+    "please subscribe",
+    "www.",
+    "http://",
+    "https://",
+    "watching a german",
+    "watching an english",
+    "created by learn",
+)
+
 BLANK_TOKENS = {
     "[blank_audio]",
     "[sound]",
@@ -71,6 +92,10 @@ BLANK_TOKENS = {
     "sound",
     "music",
 }
+
+# Spoken speech is rarely denser than ~22 characters per second of audio.
+MAX_CHARS_PER_SEC = 22.0
+MAX_TRANSCRIPT_CHARS = 220
 
 LLAMA_SYSTEM_EN_DE = (
     "Translate the user text from English into natural spoken German. "
@@ -175,16 +200,38 @@ def _is_blank_token(text: str) -> bool:
     return f"[{stripped}]" in BLANK_TOKENS or stripped in {"blank_audio", "sound", "music"}
 
 
-def _is_hallucination(text: str) -> bool:
+def _is_hallucination(text: str, *, duration_ms: float | None = None) -> bool:
     if _is_blank_token(text):
         return True
-    t = _normalize(text).lower().rstrip(".!?,;:")
+    raw = _normalize(text)
+    t = raw.lower().rstrip(".!?,;:")
     if not t or len(t) < MIN_TRANSCRIPT_CHARS:
         return True
-    if t in HALLUCINATION_STRINGS:
+    if t in HALLUCINATION_STRINGS or raw.lower() in HALLUCINATION_STRINGS:
         return True
-    if _normalize(text).lower() in HALLUCINATION_STRINGS:
+    if any(marker in t for marker in HALLUCINATION_MARKERS):
         return True
+    # Mixed DE+EN paragraphs are almost always Whisper caption junk.
+    has_de = bool(
+        re.search(
+            r"\b(der|die|das|und|ich|nicht|sie|ist|ein|eine|mit|für|auch|dann|musst|müssen)\b",
+            t,
+        )
+    )
+    has_en = bool(
+        re.search(
+            r"\b(the|and|you|are|watching|this|that|with|from|created|university|resource|learning)\b",
+            t,
+        )
+    )
+    if has_de and has_en and len(t) > 60:
+        return True
+    if len(raw) > MAX_TRANSCRIPT_CHARS:
+        return True
+    if duration_ms is not None and duration_ms > 0:
+        limit = max(48.0, (duration_ms / 1000.0) * MAX_CHARS_PER_SEC)
+        if len(raw) > limit:
+            return True
     return False
 
 
@@ -464,7 +511,9 @@ async def run_pipeline(wav: bytes, direction: str) -> JSONResponse:
             stages["whisper_ms"] = int(payload.get("_ms", 0))
             source_text = _extract_text(payload)
             detected = _extract_language(payload)
-            if _is_blank_token(source_text) or _is_hallucination(source_text):
+            if _is_blank_token(source_text) or _is_hallucination(
+                source_text, duration_ms=audio_info["duration_ms"]
+            ):
                 stages["total_ms"] = int((time.perf_counter() - t_total) * 1000)
                 reason = "blank" if _is_blank_token(source_text) else "hallucination"
                 return _skipped(
@@ -499,7 +548,7 @@ async def run_pipeline(wav: bytes, direction: str) -> JSONResponse:
                     ms=stages["total_ms"],
                     source_text=source_text,
                 )
-            if _is_hallucination(source_text):
+            if _is_hallucination(source_text, duration_ms=audio_info["duration_ms"]):
                 stages["total_ms"] = int((time.perf_counter() - t_total) * 1000)
                 return _skipped(
                     direction,
@@ -524,7 +573,7 @@ async def run_pipeline(wav: bytes, direction: str) -> JSONResponse:
                     ms=stages["total_ms"],
                     source_text=source_text,
                 )
-            if _is_hallucination(source_text):
+            if _is_hallucination(source_text, duration_ms=audio_info["duration_ms"]):
                 stages["total_ms"] = int((time.perf_counter() - t_total) * 1000)
                 return _skipped(
                     direction,
@@ -554,7 +603,9 @@ async def run_pipeline(wav: bytes, direction: str) -> JSONResponse:
             target_text=target_text,
         )
 
-    if not target_text or (_is_hallucination(target_text) and not source_text):
+    if not target_text or _is_hallucination(target_text) or (
+        _is_hallucination(source_text, duration_ms=audio_info["duration_ms"])
+    ):
         return _skipped(
             resolved,
             "hallucination",
