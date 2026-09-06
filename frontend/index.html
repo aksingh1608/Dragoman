@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Dragoman</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="voiceBanner" class="banner" role="status"></div>
+
+  <div id="app">
+    <section class="half half-de" id="halfDe" aria-label="German side">
+      <div class="half-header">
+        <span class="lang-label">Deutsch</span>
+        <span class="state-pill idle" id="stateDe">Idle</span>
+      </div>
+      <div class="texts">
+        <p class="source-text" id="sourceDe" data-placeholder="Gehört…"></p>
+        <p class="target-text" id="targetDe" data-placeholder="Übersetzung erscheint hier"></p>
+      </div>
+      <div class="level-wrap" id="levelDeWrap"><div class="level-bar" id="levelDe"></div></div>
+      <div class="controls">
+        <button type="button" class="ptt" id="pttDe" aria-label="Push to talk German">Halten · DE→EN</button>
+        <button type="button" class="icon-btn" id="repeatDe" aria-label="Repeat German" disabled>↻</button>
+      </div>
+      <div class="meta" id="metaDe"></div>
+    </section>
+
+    <section class="half half-en" id="halfEn" aria-label="English side">
+      <div class="half-header">
+        <span class="lang-label">English</span>
+        <span class="state-pill idle" id="stateEn">Idle</span>
+      </div>
+      <div class="texts">
+        <p class="source-text" id="sourceEn" data-placeholder="Heard…"></p>
+        <p class="target-text" id="targetEn" data-placeholder="Translation appears here"></p>
+      </div>
+      <div class="level-wrap" id="levelEnWrap"><div class="level-bar" id="levelEn"></div></div>
+      <div class="controls">
+        <button type="button" class="ptt" id="pttEn" aria-label="Push to talk English">Hold · EN→DE</button>
+        <button type="button" class="icon-btn" id="repeatEn" aria-label="Repeat English" disabled>↻</button>
+      </div>
+      <div class="meta" id="metaEn"></div>
+    </section>
+  </div>
+
+  <div class="toolbar">
+    <button type="button" id="btnMicTest" aria-label="Microphone test">MIC TEST</button>
+    <button type="button" id="btnPhrases" aria-label="Phrasebook">Phrases</button>
+    <button type="button" id="btnHealth" aria-label="Server health">
+      <span class="health-dot" id="healthDot"></span> Health
+    </button>
+  </div>
+
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer" id="drawer" aria-label="Phrasebook">
+    <h2>Phrasebook</h2>
+    <p class="drawer-hint">Tap Speak EN or Speak DE. Edit <code>frontend/phrasebook.json</code> on disk to add lines.</p>
+    <ul class="phrase-list" id="phraseList"></ul>
+  </aside>
+
+  <script src="/app.js"></script>
+</body>
+</html>

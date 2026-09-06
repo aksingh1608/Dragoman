@@ -1,0 +1,25 @@
+# Licensing
+
+Dragoman source code in this repository is dual-licensed under:
+
+- [MIT License](LICENSE-MIT)
+- [Apache License 2.0](LICENSE-APACHE)
+
+You may choose either license at your option.
+
+SPDX: `MIT OR Apache-2.0`
+
+## Third-party components
+
+This project shells out to / downloads software and models that keep their
+own licenses. You must comply with those separately:
+
+| Component | Typical license | Notes |
+|-----------|-----------------|-------|
+| [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | MIT | Built by `scripts/build_engines.sh` |
+| [llama.cpp](https://github.com/ggerganov/llama.cpp) | MIT | Built by `scripts/build_engines.sh` |
+| Whisper ggml weights (`ggml-*-q5_1.bin`) | See model card / OpenAI Whisper terms | Via Hugging Face `ggerganov/whisper.cpp` |
+| [Qwen2.5-1.5B-Instruct GGUF](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF) | Apache-2.0 (model) | Downloaded by `setup_models.sh` |
+| FastAPI / Uvicorn / httpx | MIT / BSD-3 | Python dependencies |
+
+Model weights and `deps/` builds are **not** shipped in this git repo.

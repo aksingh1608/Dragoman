@@ -1,0 +1,375 @@
+/* Dragoman — counter-pass split screen, mobile first */
+
+:root {
+  --bg: #0e1116;
+  --panel-de: #121820;
+  --panel-en: #10151c;
+  --ink: #e8eef7;
+  --ink-dim: #9aa7b8;
+  --line: #243041;
+  --idle: #3d4a5c;
+  --listening: #c45c26;
+  --thinking: #c9a227;
+  --speaking: #2f8f6b;
+  --danger: #c44;
+  --btn-face: #1a2330;
+  --btn-edge: #2a3a4f;
+  --level: #2f8f6b;
+  --font: "Segoe UI", "Roboto", "Helvetica Neue", sans-serif;
+  --half-pad: 0.75rem;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  overflow: hidden;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  min-height: 100vh;
+}
+
+#app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.half {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--half-pad);
+  gap: 0.4rem;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+
+.half-de {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #1a2533 0%, transparent 55%),
+    var(--panel-de);
+  transform: rotate(180deg);
+}
+
+.half-en {
+  background:
+    radial-gradient(120% 80% at 50% 100%, #17202b 0%, transparent 55%),
+    var(--panel-en);
+  border-bottom: none;
+}
+
+.half-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.lang-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  font-weight: 700;
+}
+
+.state-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.35rem;
+  background: var(--idle);
+  color: #fff;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.state-pill.idle {
+  background: var(--idle);
+}
+.state-pill.listening {
+  background: var(--listening);
+}
+.state-pill.thinking {
+  background: var(--thinking);
+  color: #1a1400;
+}
+.state-pill.speaking {
+  background: var(--speaking);
+}
+
+.texts {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow: auto;
+}
+
+.source-text,
+.target-text {
+  margin: 0;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.source-text {
+  font-size: clamp(0.95rem, 3.6vw, 1.15rem);
+  color: var(--ink-dim);
+}
+
+.target-text {
+  font-size: clamp(1.35rem, 5.5vw, 1.85rem);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.target-text:empty::before,
+.source-text:empty::before {
+  content: attr(data-placeholder);
+  opacity: 0.35;
+  font-weight: 500;
+}
+
+.controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.ptt {
+  flex: 1;
+  min-height: 4.25rem;
+  border: 2px solid var(--btn-edge);
+  border-radius: 0.85rem;
+  background: var(--btn-face);
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: none;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+}
+
+.ptt:active,
+.ptt.held {
+  background: var(--listening);
+  border-color: #e07a3a;
+  transform: scale(0.98);
+}
+
+.ptt:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.icon-btn {
+  width: 3.25rem;
+  min-height: 4.25rem;
+  border: 2px solid var(--btn-edge);
+  border-radius: 0.85rem;
+  background: var(--btn-face);
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+}
+
+.level-wrap {
+  height: 0.45rem;
+  background: #1a222d;
+  border-radius: 999px;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.level-wrap.active {
+  opacity: 1;
+}
+
+.level-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--level), #7fd6b0);
+  transition: width 0.05s linear;
+}
+
+.meta {
+  font-size: 0.65rem;
+  color: var(--ink-dim);
+  min-height: 0.9rem;
+}
+
+.toolbar {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  display: flex;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+.toolbar button {
+  pointer-events: auto;
+  border: 1px solid var(--line);
+  background: rgba(14, 17, 22, 0.92);
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 30;
+  display: none;
+}
+
+.drawer-backdrop.open {
+  display: block;
+}
+
+.drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 70vh;
+  background: #151b24;
+  border-top: 1px solid var(--line);
+  z-index: 31;
+  transform: translateY(105%);
+  transition: transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 0.75rem 1.25rem;
+  gap: 0.5rem;
+}
+
+.drawer.open {
+  transform: translateY(0);
+}
+
+.drawer h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.drawer-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ink-dim);
+}
+
+.phrase-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.phrase-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  background: #10161e;
+}
+
+.phrase-list .phrase-en {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.phrase-list .phrase-de {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
+.phrase-list button {
+  border: 1px solid var(--btn-edge);
+  background: var(--btn-face);
+  color: var(--ink);
+  border-radius: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.banner {
+  position: fixed;
+  left: 0.5rem;
+  right: 0.5rem;
+  top: 0.5rem;
+  z-index: 40;
+  background: #3a1c1c;
+  border: 1px solid var(--danger);
+  color: #ffd6d6;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  display: none;
+}
+
+.banner.show {
+  display: block;
+}
+
+.health-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--idle);
+  display: inline-block;
+}
+
+.health-dot.ok {
+  background: var(--speaking);
+}
+
+.health-dot.bad {
+  background: var(--danger);
+}
