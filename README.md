@@ -94,7 +94,7 @@ PWA ──stream chunks──► bridge.py ──1× whisper──► whisper-se
 ## Quick start (laptop)
 
 ```bash
-git clone https://github.com/<YOU>/Dragoman.git
+git clone https://github.com/aksingh1608/Dragoman.git
 cd Dragoman
 
 python -m venv .venv
@@ -129,15 +129,18 @@ pkg install git clang cmake make python ffmpeg curl wget termux-api
 
 ```bash
 cd ~
-git clone https://github.com/<YOU>/Dragoman.git
+git clone https://github.com/aksingh1608/Dragoman.git
 cd ~/Dragoman
 chmod +x scripts/*.sh
 
 ./scripts/build_engines.sh
-# Uses: cmake -DGGML_NATIVE=ON -DGGML_CPU_ARM_ARCH="armv8.6-a+dotprod+i8mm"
+# On aarch64/Termux this uses:
+#   -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+i8mm
+# (keeps DOTPROD + i8mm; avoids Clang crashes from auto-enabled SVE)
 ```
 
-Do **not** build with `GGML_NATIVE=OFF` on the phone — that turns off DOTPROD / i8mm and hurts latency badly.
+After `./scripts/run.sh`, confirm logs show `DOTPROD=1` and `MATMUL_INT8=1`.
+Avoid plain `GGML_NATIVE=ON` on Termux — it often enables SVE and Clang can abort compiling `repack.cpp`.
 
 ### 3. Python + models
 
